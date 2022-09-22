@@ -12,16 +12,26 @@ import (
 
 //export GetUsd
 func GetUsd() float64 {
-	return GetCurrency("USD")
+	return GetByCode("USD")
 }
 
 //export GetEur
 func GetEur() float64 {
-	return GetCurrency("EUR")
+	return GetByCode("EUR")
 }
 
 //export GetCurrency
-func GetCurrency(input string) float64 {
+func GetCurrency(code *C.char) float64 {
+	return GetByCode(C.GoString(code))
+}
+
+func main() {
+	// fmt.Println(GetUsd())
+	// fmt.Println(GetEur())
+
+}
+
+func GetByCode(input string) float64 {
 	var output float64 = -1.0
 
 	c := colly.NewCollector(colly.AllowedDomains("www.cnb.cz"))
@@ -40,10 +50,4 @@ func GetCurrency(input string) float64 {
 	})
 	c.Visit("https://www.cnb.cz/en/financial-markets/foreign-exchange-market/central-bank-exchange-rate-fixing/central-bank-exchange-rate-fixing/")
 	return output
-}
-
-func main() {
-	// fmt.Println(GetUsd())
-	// fmt.Println(GetEur())
-
 }

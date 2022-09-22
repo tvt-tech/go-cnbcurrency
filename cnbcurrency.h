@@ -70,7 +70,7 @@ extern "C" {
 
 extern __declspec(dllexport) GoFloat64 GetUsd();
 extern __declspec(dllexport) GoFloat64 GetEur();
-extern __declspec(dllexport) GoFloat64 GetCurrency(GoString input);
+extern __declspec(dllexport) GoFloat64 GetCurrency(char* code);
 
 #ifdef __cplusplus
 }
