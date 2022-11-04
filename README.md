@@ -1,5 +1,4 @@
-# BallisticCalculator
-CNB currency scrapper
+# CNB currency scrapper
 
 
 **Build dll using GCC**
