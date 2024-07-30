@@ -22,7 +22,16 @@ const (
 
 //export GetCurrencyC
 func GetCurrencyC(bankID *C.char, code *C.char) C.double {
-	value, err := GetCurrency(C.GoString(bankID), C.GoString(code))
+	if bankID == nil || code == nil {
+		return C.double(0)
+	}
+
+	// Convert C strings to Go strings
+	bankIDStr := C.GoString(bankID)
+	codeStr := C.GoString(code)
+
+	// Call the function and handle errors
+	value, err := GetCurrency(bankIDStr, codeStr)
 	if err != nil {
 		return C.double(0)
 	}

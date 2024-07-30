@@ -1,4 +1,4 @@
-module github.com/o-murphy/cnbcurrency
+module github.com/tvt-tech/cnbcurrency
 
 go 1.18
 
