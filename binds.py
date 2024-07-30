@@ -1,17 +1,20 @@
-from ctypes import *
+from ctypes import cdll, c_char_p, c_double, c_int
 from pathlib import Path
 
 
-lib_path = Path("cnbcurrency.dll").absolute().__str__()
+lib_path = Path("currency32.dll").absolute().__str__()
 lib = cdll.LoadLibrary(lib_path)
+handle = lib._handle
+
+lib.GetCurrencyC.argtypes = [c_char_p, c_char_p]
+lib.GetCurrencyC.restype = c_double
+lib.UpdateCurrenciesC.restype = c_int
 
 
-cnblib.GetUsd.restype = c_double
-cnblib.GetEur.restype = c_double
-cnblib.GetCurrency.argtypes = [c_char_p]
-cnblib.GetCurrency.restype = c_double
+def main():
+    if lib.UpdateCurrenciesC() >= 0:
+        print(lib.GetCurrencyC("NBU".encode('utf-8'), "USD".encode('utf-8')))
 
 
 if __name__ == '__main__':
-    cnblib.GetUsd()
-    cnblib.GetCurrency("ils".encode('utf-8'))
+    main()
