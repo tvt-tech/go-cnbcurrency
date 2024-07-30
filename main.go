@@ -21,21 +21,21 @@ const (
 //
 
 //export GetCurrencyC
-func GetCurrencyC(bankID *C.char, code *C.char) float64 {
+func GetCurrencyC(bankID *C.char, code *C.char) C.double {
 	value, err := GetCurrency(C.GoString(bankID), C.GoString(code))
 	if err != nil {
-		return 0
+		return C.double(0)
 	}
-	return value
+	return C.double(value)
 }
 
 //export UpdateCurrenciesC
-func UpdateCurrenciesC() int {
+func UpdateCurrenciesC() C.int {
 	err := UpdateCurrencies()
 	if err != nil {
-		return -1
+		return C.int(-1)
 	}
-	return 0
+	return C.int(0)
 }
 
 func main() {
