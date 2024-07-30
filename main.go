@@ -1,13 +1,14 @@
 package main
 
-// import "C"
+import "C"
 
 import (
 	"fmt"
+	"os"
 	"strconv"
-	"strings"
 
 	"github.com/gocolly/colly"
+	"gopkg.in/ini.v1"
 )
 
 const (
@@ -17,89 +18,202 @@ const (
 	NBU_URL             string = "https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange/"
 )
 
-//export GetUsd
-func GetUsd() float64 {
-	return GetByCode("USD")
+//
+
+//export GetCurrencyC
+func GetCurrencyC(bankID *C.char, code *C.char) float64 {
+	value, err := GetCurrency(C.GoString(bankID), C.GoString(code))
+	if err != nil {
+		return 0
+	}
+	return value
 }
 
-//export GetEur
-func GetEur() float64 {
-	return GetByCode("EUR")
+//export UpdateCurrenciesC
+func UpdateCurrenciesC() int {
+	err := UpdateCurrencies()
+	if err != nil {
+		return -1
+	}
+	return 0
 }
-
-// //export GetCurrency
-// func GetCurrency(code *C.char) float64 {
-// 	return GetByCode(C.GoString(code))
-// }
 
 func main() {
-	//fmt.Println(GetUsd())
-	//fmt.Println(GetEur())
-	fmt.Println(GetNBUbyCode("USD"))
-	fmt.Println(GetNBUbyCode("EUR"))
+	// UpdateCurrencies()
+	// fmt.Println(GetCurrency("NBU", "USD"))
 }
 
-func GetNBUbyCode(input string) float64 {
-	var output float64 = -1.0
+func UpdateCurrencies() error {
 
-	// Create a new collector
+	cnbCurrencies, err := FetchCNBCurrencies()
+	if err != nil {
+		fmt.Println("CNB currencies update Error", err)
+	} else {
+		err = CacheCurrencies("CNB", cnbCurrencies)
+		if err != nil {
+			fmt.Println("Error on CNB cache", err)
+		}
+	}
+
+	nbuCurrencies, err := FetchNBUCurrencies()
+	if err != nil {
+		fmt.Println("NBU currencies update Error", err)
+	} else {
+		err = CacheCurrencies("NBU", nbuCurrencies)
+		if err != nil {
+			fmt.Println("Error on NBU cache", err)
+		}
+	}
+	return err
+}
+
+func FetchNBUCurrencies() (map[string]float64, error) {
+	output := make(map[string]float64)
+	var scrapeErr error
+
 	c := colly.NewCollector(colly.AllowedDomains(NBU_ALLOWED_DOMAINS)) // Adjust domain if needed
 
-	// Set up XML parsing for currency elements within exchange
 	c.OnXML("//currency", func(x *colly.XMLElement) {
-		code := x.ChildText("cc")
+		cc := x.ChildText("cc")
 		rateStr := x.ChildText("rate")
 
-		// Debug output
-		// fmt.Printf("Found currency element with cc: %s, rate: %s\n", code, rateStr)
-
-		// Check if the 'cc' element matches the input
-		if code == input {
-			// Convert rate to float64
-			rate, err := strconv.ParseFloat(rateStr, 64)
-			if err == nil {
-				output = rate
-				// fmt.Printf("Rate for %s: %f\n", input, output)
-			} else {
-				// fmt.Printf("Error converting rate: %v\n", err)
-			}
+		rate, err := strconv.ParseFloat(rateStr, 64)
+		if err == nil {
+			output[cc] = rate
+		} else {
+			fmt.Println("Can't parse %w=%w", cc, rateStr)
 		}
 	})
 
-	// c.OnRequest(func(r *colly.Request) {
-	// 	fmt.Printf("Visiting URL: %s\n", r.URL)
-	// })
+	c.OnError(func(_ *colly.Response, err error) {
+		scrapeErr = err
+	})
 
-	// c.OnError(func(r *colly.Response, err error) {
-	// 	fmt.Printf("Request failed with status code %d and error: %v\n", r.StatusCode, err)
-	// })
-
-	// Start the request
 	err := c.Visit(NBU_URL)
 	if err != nil {
-		fmt.Println("Error visiting URL:", err)
+		scrapeErr = err
 	}
 
-	return output
+	if scrapeErr != nil {
+		return output, scrapeErr
+	}
+
+	return output, nil
+
 }
 
-func GetByCode(input string) float64 {
-	var output float64 = -1.0
+func FetchCNBCurrencies() (map[string]float64, error) {
+	output := make(map[string]float64)
 
-	c := colly.NewCollector(colly.AllowedDomains(CNB_ALLOWED_DOMAINS))
+	var scrapeErr error
+
+	c := colly.NewCollector(
+		colly.AllowedDomains(CNB_ALLOWED_DOMAINS),
+	)
+
 	c.OnHTML(".currency-table", func(e *colly.HTMLElement) {
-
 		e.ForEach("tr", func(i int, tr *colly.HTMLElement) {
-			code := tr.ChildText("td:nth-of-type(4)")
-			rate, err := strconv.ParseFloat(tr.ChildText("td:nth-of-type(5)"), 64)
+			cc := tr.ChildText("td:nth-of-type(4)")
+			rateStr := tr.ChildText("td:nth-of-type(5)")
+			rate, err := strconv.ParseFloat(rateStr, 64)
 			if err == nil {
-				if strings.EqualFold(code, input) {
-					output = rate
-				}
+				output[cc] = rate
+			} else {
+				fmt.Println("Can't parse %w=%w", cc, rateStr)
 			}
 		})
-
 	})
-	c.Visit(CNB_URL)
-	return output
+
+	c.OnError(func(_ *colly.Response, err error) {
+		scrapeErr = err
+	})
+
+	err := c.Visit(CNB_URL)
+	if err != nil {
+		scrapeErr = err
+	}
+
+	if scrapeErr != nil {
+		return output, scrapeErr
+	}
+
+	return output, nil
+}
+
+func CacheCurrencies(bankID string, ccs map[string]float64) error {
+	var cfg *ini.File
+	var err error
+
+	// Check if the INI file exists
+	if _, err := os.Stat("currencies.ini"); os.IsNotExist(err) {
+		// If file does not exist, create a new configuration
+		cfg = ini.Empty()
+	} else {
+		// Load the existing INI file
+		cfg, err = ini.Load("currencies.ini")
+		if err != nil {
+			return fmt.Errorf("failed to load INI file: %w", err)
+		}
+	}
+
+	// Get or create the section
+	section, err := cfg.GetSection(bankID)
+	if err != nil {
+		section, err = cfg.NewSection(bankID)
+		if err != nil {
+			return fmt.Errorf("failed to get section: %w", err)
+		}
+	}
+
+	for cc, rate := range ccs {
+		strValue := strconv.FormatFloat(rate, 'f', -1, 64)
+
+		// Set or update the key's value in the section
+		_, err = section.NewKey(cc, strValue)
+		if err != nil {
+			return fmt.Errorf("failed to set key value: %w", err)
+		}
+	}
+
+	// Save the updated configuration back to the INI file
+	err = cfg.SaveTo("currencies.ini")
+	if err != nil {
+		return fmt.Errorf("failed to save INI file: %w", err)
+	}
+
+	return nil
+}
+
+func GetCurrency(bankID, cc string) (float64, error) {
+	var cfg *ini.File
+	var err error
+
+	// Check if the INI file exists
+	if _, err := os.Stat("currencies.ini"); os.IsNotExist(err) {
+		// If file does not exist, return error
+		return 0, err
+	} else {
+		// Load the existing INI file
+		cfg, err = ini.Load("currencies.ini")
+		if err != nil {
+			return 0, fmt.Errorf("failed to load INI file: %w", err)
+		}
+	}
+
+	if !cfg.HasSection(bankID) {
+		return 0, fmt.Errorf("currencies.ini has not %w section", bankID)
+	}
+
+	section := cfg.Section(bankID)
+
+	if !section.HasKey(cc) {
+		return 0, fmt.Errorf("currencies.ini has not %w key in %w section", cc, bankID)
+	}
+
+	strValue := section.Key(cc)
+	floatValue, err := strValue.Float64()
+	if err != nil {
+		return 0, fmt.Errorf("Parse value error")
+	}
+	return floatValue, nil
 }
