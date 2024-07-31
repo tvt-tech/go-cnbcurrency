@@ -3,22 +3,47 @@ package main
 import "C"
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"strconv"
 	"time"
 
-	"github.com/gocolly/colly"
 	"gopkg.in/ini.v1"
 )
 
 const (
-	CACHE_FILENAME      string = "currencies.ini"
-	CNB_ALLOWED_DOMAINS string = "www.cnb.cz"
-	NBU_ALLOWED_DOMAINS string = "bank.gov.ua"
-	CNB_URL             string = "https://www.cnb.cz/en/financial-markets/foreign-exchange-market/central-bank-exchange-rate-fixing/central-bank-exchange-rate-fixing/"
-	NBU_URL             string = "https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange/"
+	CACHE_FILENAME string = "currencies.ini"
+	CNB_JSON_URI   string = "https://api.cnb.cz/cnbapi/exrates/daily/"
+	NBU_JSON_URI   string = "https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?json"
 )
+
+type NBURate struct {
+	R030         int     `json:"r030"`
+	Txt          string  `json:"txt"`
+	Rate         float64 `json:"rate"`
+	CC           string  `json:"cc"`
+	ExchangeDate string  `json:"exchangedate"`
+}
+
+type NBURatesResponse []NBURate
+
+type CNBRate struct {
+	ValidFor     string  `json:"validFor"`
+	Order        int     `json:"order"`
+	Country      string  `json:"country"`
+	Currency     string  `json:"currency"`
+	Amount       int     `json:"amount"`
+	CurrencyCode string  `json:"currencyCode"`
+	Rate         float64 `json:"rate"`
+}
+
+// Define a struct to represent the entire response
+type CNBRatesResponse struct {
+	Rates []CNBRate `json:"rates"`
+}
 
 //export GetCurrencyC
 func GetCurrencyC(bankID *C.char, code *C.char) C.double {
@@ -52,7 +77,20 @@ func GetCacheUpdateTimeC() C.longlong {
 	return C.longlong(GetCacheUpdateTime())
 }
 
-func main() {}
+func main() {
+	fmt.Println("CurUpd: ", UpdateCurrencies())
+	fmt.Println("UpdTime: ", GetCacheUpdateTime())
+	if rate, err := GetCurrency("NBU", "EUR"); err == nil {
+		fmt.Println("NBU EUR: ", rate)
+	} else {
+		fmt.Println(err)
+	}
+	if rate, err := GetCurrency("CNB", "USD"); err == nil {
+		fmt.Println("CNB USD: ", rate)
+	} else {
+		fmt.Println(err)
+	}
+}
 
 func GetCacheUpdateTime() int64 {
 	if time, err := getFileModTime(CACHE_FILENAME); err == nil {
@@ -62,13 +100,16 @@ func GetCacheUpdateTime() int64 {
 }
 
 func UpdateCurrencies() error {
-
+	var updateErr error
 	cnbCurrencies, err := FetchCNBCurrencies()
+	fmt.Println("CNB currencies update Error", err)
 	if err != nil {
+		updateErr = err
 		fmt.Println("CNB currencies update Error", err)
 	} else {
-		err = CacheCurrencies("CNB", cnbCurrencies)
+		err := CacheCurrencies("CNB", cnbCurrencies)
 		if err != nil {
+			updateErr = err
 			fmt.Println("Error on CNB cache", err)
 		}
 	}
@@ -76,86 +117,101 @@ func UpdateCurrencies() error {
 	nbuCurrencies, err := FetchNBUCurrencies()
 	if err != nil {
 		fmt.Println("NBU currencies update Error", err)
+		updateErr = err
 	} else {
-		err = CacheCurrencies("NBU", nbuCurrencies)
+		err := CacheCurrencies("NBU", nbuCurrencies)
 		if err != nil {
+			updateErr = err
 			fmt.Println("Error on NBU cache", err)
 		}
 	}
-	return err
+	return updateErr
+}
+
+func FetchAPIEndpoint(url string) ([]byte, error) {
+	// Make the HTTP GET request
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching data: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Check if the request was successful
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("error: status code %d", resp.StatusCode)
+	}
+
+	// Read the response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading response body: %w", err)
+	}
+	return body, nil
+}
+
+func FetchNBUCurrenciesAPI() (NBURatesResponse, error) {
+	body, err := FetchAPIEndpoint(NBU_JSON_URI)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a variable to hold the JSON data
+	var data NBURatesResponse
+
+	// Unmarshal (decode) the JSON into the struct
+	err = json.Unmarshal(body, &data)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding JSON: %w", err)
+	}
+
+	// Return the parsed data
+	return data, nil
+}
+
+func FetchCNBCurrenciesAPI() (*CNBRatesResponse, error) {
+	body, err := FetchAPIEndpoint(CNB_JSON_URI)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create an instance of the struct to hold the JSON data
+	var data CNBRatesResponse
+
+	// Unmarshal (decode) the JSON into the struct
+	err = json.Unmarshal(body, &data)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding JSON: %w", err)
+	}
+	// Return the parsed data
+	return &data, nil
 }
 
 func FetchNBUCurrencies() (map[string]float64, error) {
 	output := make(map[string]float64)
-	var scrapeErr error
-
-	c := colly.NewCollector(colly.AllowedDomains(NBU_ALLOWED_DOMAINS)) // Adjust domain if needed
-
-	c.OnXML("//currency", func(x *colly.XMLElement) {
-		cc := x.ChildText("cc")
-		rateStr := x.ChildText("rate")
-
-		rate, err := strconv.ParseFloat(rateStr, 64)
-		if err == nil {
+	data, err := FetchNBUCurrenciesAPI()
+	if err == nil {
+		for _, rate := range data {
+			cc := rate.CC
+			rate := rate.Rate
 			output[cc] = rate
-		} else {
-			fmt.Println("Can't parse %w=%w", cc, rateStr)
 		}
-	})
-
-	c.OnError(func(_ *colly.Response, err error) {
-		scrapeErr = err
-	})
-
-	err := c.Visit(NBU_URL)
-	if err != nil {
-		scrapeErr = err
+		return output, nil
 	}
-
-	if scrapeErr != nil {
-		return output, scrapeErr
-	}
-
-	return output, nil
-
+	return output, err
 }
 
 func FetchCNBCurrencies() (map[string]float64, error) {
 	output := make(map[string]float64)
-
-	var scrapeErr error
-
-	c := colly.NewCollector(
-		colly.AllowedDomains(CNB_ALLOWED_DOMAINS),
-	)
-
-	c.OnHTML(".currency-table", func(e *colly.HTMLElement) {
-		e.ForEach("tr", func(i int, tr *colly.HTMLElement) {
-			cc := tr.ChildText("td:nth-of-type(4)")
-			rateStr := tr.ChildText("td:nth-of-type(5)")
-			rate, err := strconv.ParseFloat(rateStr, 64)
-			if err == nil {
-				output[cc] = rate
-			} else {
-				fmt.Println("Can't parse %w=%w", cc, rateStr)
-			}
-		})
-	})
-
-	c.OnError(func(_ *colly.Response, err error) {
-		scrapeErr = err
-	})
-
-	err := c.Visit(CNB_URL)
-	if err != nil {
-		scrapeErr = err
+	data, err := FetchCNBCurrenciesAPI()
+	if err == nil {
+		for _, rate := range data.Rates {
+			cc := rate.CurrencyCode
+			rate := rate.Rate
+			output[cc] = rate
+		}
+		return output, nil
 	}
-
-	if scrapeErr != nil {
-		return output, scrapeErr
-	}
-
-	return output, nil
+	return output, err
 }
 
 func CacheCurrencies(bankID string, ccs map[string]float64) error {
@@ -194,8 +250,7 @@ func CacheCurrencies(bankID string, ccs map[string]float64) error {
 	}
 
 	// Save the updated configuration back to the INI file
-	err = cfg.SaveTo(CACHE_FILENAME)
-	if err != nil {
+	if cfg.SaveTo(CACHE_FILENAME) != nil {
 		return fmt.Errorf("failed to save INI file: %w", err)
 	}
 
@@ -238,7 +293,7 @@ func GetCurrency(bankID, cc string) (float64, error) {
 	section := cfg.Section(bankID)
 
 	if !section.HasKey(cc) {
-		return 0, fmt.Errorf("currencies.ini has not %w key in %w section", cc, bankID)
+		return 0, fmt.Errorf("currencies.ini has not %s key in %s section", cc, bankID)
 	}
 
 	strValue := section.Key(cc)
