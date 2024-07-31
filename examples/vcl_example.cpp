@@ -28,9 +28,7 @@ void __fastcall TForm1::Button1Click(TObject *Sender)
 
 	UnicodeString dllPath = ExtractFileDir(Application->ExeName) + L"\\currency32.dll";
 
-	std::basic_string dllPathStr = std::wstring(dllPath.c_str(), dllPath.Length());
-
-	CurrencyDLLWrapper currencyWrapper(dllPathStr);
+	CurrencyDLLWrapper currencyWrapper(dllPath.w_str());
 	cacheUpdateErrorCode = currencyWrapper.UpdateCurrencies();
 	cacheUpdateTime = currencyWrapper.GetCacheUpdateTime();
 	usdRate =currencyWrapper.GetCurrency(bankId, code);
