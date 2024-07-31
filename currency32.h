@@ -76,6 +76,7 @@ extern "C" {
 
 extern __declspec(dllexport) double GetCurrencyC(char* bankID, char* code);
 extern __declspec(dllexport) int UpdateCurrenciesC();
+extern __declspec(dllexport) long long int GetCacheUpdateTimeC();
 
 #ifdef __cplusplus
 }

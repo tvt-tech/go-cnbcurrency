@@ -6,24 +6,24 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/gocolly/colly"
 	"gopkg.in/ini.v1"
 )
 
 const (
+	CACHE_FILENAME      string = "currencies.ini"
 	CNB_ALLOWED_DOMAINS string = "www.cnb.cz"
 	NBU_ALLOWED_DOMAINS string = "bank.gov.ua"
 	CNB_URL             string = "https://www.cnb.cz/en/financial-markets/foreign-exchange-market/central-bank-exchange-rate-fixing/central-bank-exchange-rate-fixing/"
 	NBU_URL             string = "https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange/"
 )
 
-//
-
 //export GetCurrencyC
 func GetCurrencyC(bankID *C.char, code *C.char) C.double {
 	if bankID == nil || code == nil {
-		return C.double(0)
+		return C.double(-2)
 	}
 
 	// Convert C strings to Go strings
@@ -33,7 +33,7 @@ func GetCurrencyC(bankID *C.char, code *C.char) C.double {
 	// Call the function and handle errors
 	value, err := GetCurrency(bankIDStr, codeStr)
 	if err != nil {
-		return C.double(0)
+		return C.double(-1)
 	}
 	return C.double(value)
 }
@@ -47,9 +47,18 @@ func UpdateCurrenciesC() C.int {
 	return C.int(0)
 }
 
-func main() {
-	// UpdateCurrencies()
-	// fmt.Println(GetCurrency("NBU", "USD"))
+//export GetCacheUpdateTimeC
+func GetCacheUpdateTimeC() C.longlong {
+	return C.longlong(GetCacheUpdateTime())
+}
+
+func main() {}
+
+func GetCacheUpdateTime() int64 {
+	if time, err := getFileModTime(CACHE_FILENAME); err == nil {
+		return time.Unix()
+	}
+	return -1
 }
 
 func UpdateCurrencies() error {
@@ -154,12 +163,12 @@ func CacheCurrencies(bankID string, ccs map[string]float64) error {
 	var err error
 
 	// Check if the INI file exists
-	if _, err := os.Stat("currencies.ini"); os.IsNotExist(err) {
+	if _, err := os.Stat(CACHE_FILENAME); os.IsNotExist(err) {
 		// If file does not exist, create a new configuration
 		cfg = ini.Empty()
 	} else {
 		// Load the existing INI file
-		cfg, err = ini.Load("currencies.ini")
+		cfg, err = ini.Load(CACHE_FILENAME)
 		if err != nil {
 			return fmt.Errorf("failed to load INI file: %w", err)
 		}
@@ -185,7 +194,7 @@ func CacheCurrencies(bankID string, ccs map[string]float64) error {
 	}
 
 	// Save the updated configuration back to the INI file
-	err = cfg.SaveTo("currencies.ini")
+	err = cfg.SaveTo(CACHE_FILENAME)
 	if err != nil {
 		return fmt.Errorf("failed to save INI file: %w", err)
 	}
@@ -193,17 +202,30 @@ func CacheCurrencies(bankID string, ccs map[string]float64) error {
 	return nil
 }
 
+func getFileModTime(filePath string) (time.Time, error) {
+	// Check if file exists and get its info
+	fileInfo, err := os.Stat(filePath)
+	if os.IsNotExist(err) {
+		return time.Time{}, fmt.Errorf("file does not exist")
+	} else if err != nil {
+		return time.Time{}, err
+	}
+
+	// Return the modification time
+	return fileInfo.ModTime(), nil
+}
+
 func GetCurrency(bankID, cc string) (float64, error) {
 	var cfg *ini.File
 	var err error
 
 	// Check if the INI file exists
-	if _, err := os.Stat("currencies.ini"); os.IsNotExist(err) {
+	if _, err := os.Stat(CACHE_FILENAME); os.IsNotExist(err) {
 		// If file does not exist, return error
 		return 0, err
 	} else {
 		// Load the existing INI file
-		cfg, err = ini.Load("currencies.ini")
+		cfg, err = ini.Load(CACHE_FILENAME)
 		if err != nil {
 			return 0, fmt.Errorf("failed to load INI file: %w", err)
 		}

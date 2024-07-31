@@ -7,6 +7,7 @@ class CurrencyDLLWrapper {
 public:
     typedef int (*UpdateCurrenciesC)();
 	typedef double (*GetCurrencyC)(const char*, const char*);
+    typedef long long int (*GetCacheUpdateTimeC)();
 
     CurrencyDLLWrapper(const std::wstring& dllPath) {
         // Load the DLL
@@ -18,6 +19,7 @@ public:
         // Get the function addresses
         updateCurrencies = (UpdateCurrenciesC)GetProcAddress(dllHandle, "UpdateCurrenciesC");
         getCurrency = (GetCurrencyC)GetProcAddress(dllHandle, "GetCurrencyC");
+        getCacheUpdateTime = (GetCacheUpdateTimeC)GetProcAddress(dllHandle, "GetCacheUpdateTimeC");
 
         if (!updateCurrencies || !getCurrency) {
             FreeLibrary(dllHandle);
@@ -46,8 +48,16 @@ public:
         throw std::runtime_error("GetCurrency function not loaded");
     }
 
+    long long int GetCacheUpdateTime() {
+        if (getCacheUpdateTime) {
+            return getCacheUpdateTime();
+        }
+        throw std::runtime_error("Can't get cache update time");
+    }
+
 private:
     HMODULE dllHandle;
     UpdateCurrenciesC updateCurrencies;
     GetCurrencyC getCurrency;
+    GetCacheUpdateTimeC getCacheUpdateTime;
 };
