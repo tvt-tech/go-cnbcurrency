@@ -51,12 +51,3 @@ private:
     UpdateCurrenciesC updateCurrencies;
     GetCurrencyC getCurrency;
 };
-
-
-/* USAGE EXAMPLE:
-	CurrencyDLLWrapper currencyWrapper(std::wstring(dllPath.c_str(), dllPath.Length()));
-	int err = currencyWrapper.UpdateCurrencies();
-	ShowMessage(IntToStr(err));
-
-	ShowMessage(FloatToStr(currencyWrapper.GetCurrency(bank_id, code)));
-*/
