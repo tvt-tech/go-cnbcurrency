@@ -78,18 +78,18 @@ func GetCacheUpdateTimeC() C.longlong {
 }
 
 func main() {
-	fmt.Println("CurUpd: ", UpdateCurrencies())
-	fmt.Println("UpdTime: ", GetCacheUpdateTime())
-	if rate, err := GetCurrency("NBU", "EUR"); err == nil {
-		fmt.Println("NBU EUR: ", rate)
-	} else {
-		fmt.Println(err)
-	}
-	if rate, err := GetCurrency("CNB", "USD"); err == nil {
-		fmt.Println("CNB USD: ", rate)
-	} else {
-		fmt.Println(err)
-	}
+	// fmt.Println("CurUpd: ", UpdateCurrencies())
+	// fmt.Println("UpdTime: ", GetCacheUpdateTime())
+	// if rate, err := GetCurrency("NBU", "EUR"); err == nil {
+	// 	fmt.Println("NBU EUR: ", rate)
+	// } else {
+	// 	fmt.Println(err)
+	// }
+	// if rate, err := GetCurrency("CNB", "USD"); err == nil {
+	// 	fmt.Println("CNB USD: ", rate)
+	// } else {
+	// 	fmt.Println(err)
+	// }
 }
 
 func GetCacheUpdateTime() int64 {
@@ -287,7 +287,7 @@ func GetCurrency(bankID, cc string) (float64, error) {
 	}
 
 	if !cfg.HasSection(bankID) {
-		return 0, fmt.Errorf("currencies.ini has not %w section", bankID)
+		return 0, fmt.Errorf("currencies.ini has not %s section", bankID)
 	}
 
 	section := cfg.Section(bankID)
